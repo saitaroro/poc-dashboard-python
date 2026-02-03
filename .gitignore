@@ -1,0 +1,16 @@
+# Fichiers Python
+__pycache__/
+*.py[cod]
+
+# Environnement et VS Code
+.env
+.venv
+env/
+venv/
+.vscode/
+
+# Fichiers générés par ton app (On ne veut pas versionner les PPTX de test)
+output/
+
+# Fichiers systèmes
+.DS_Store
