@@ -9,6 +9,12 @@ from pptx.util import Inches
 from email.message import EmailMessage
 import io
 
+# tentative d'import pour la génération de template Outlook (.oft)
+try:
+    import win32com.client
+except ImportError:
+    win32com = None
+
 app = Flask(__name__)
 
 # Configuration des dossiers
@@ -223,26 +229,52 @@ def generate_email():
     email_to = request.form.get('email_to')
     email_cc = request.form.get('email_cc')
     subject = request.form.get('subject')
-    
-    # Création de l'objet Email
+
+    body_text = (
+        "Bonjour,\n\nVeuillez trouver ci-joint le rapport mensuel des rendez-vous.\n\nCordialement."
+    )
+
+    pptx_path = os.path.join(OUTPUT_DIR, 'Rapport_Final.pptx')
+
+    # si win32com est disponible, on génère un template .oft via Outlook
+    if win32com is not None:
+        try:
+            outlook = win32com.client.Dispatch('Outlook.Application')
+            mail = outlook.CreateItem(0)  # 0 == olMailItem
+            mail.Subject = subject
+            mail.To = email_to
+            mail.CC = email_cc
+            mail.Body = body_text
+            mail.Attachments.Add(pptx_path)
+
+            oft_path = os.path.join(OUTPUT_DIR, 'template.oft')
+            # 5 == olTemplate
+            mail.SaveAs(oft_path, 5)
+            return send_file(oft_path, as_attachment=True, download_name="template.oft")
+        except Exception as e:
+            # si Outlook n'est pas installé ou erreur, on retombe sur .eml
+            print(f"Erreur génération OFT : {e}")
+
+    # fallback classique en .eml
     msg = EmailMessage()
     msg['Subject'] = subject
-    msg['From'] = "monapp@entreprise.com" # Juste pour le format
+    msg['From'] = "monapp@entreprise.com"
     msg['To'] = email_to
     msg['Cc'] = email_cc
-    msg.set_content("Bonjour,\n\nVeuillez trouver ci-joint le rapport mensuel des rendez-vous.\n\nCordialement.")
-    
-    # Attacher le PowerPoint
-    pptx_path = os.path.join(OUTPUT_DIR, 'Rapport_Final.pptx')
+    msg.set_content(body_text)
     with open(pptx_path, 'rb') as f:
         file_data = f.read()
-        msg.add_attachment(file_data, maintype='application', subtype='vnd.openxmlformats-officedocument.presentationml.presentation', filename="Rapport_2025.pptx")
-    
-    # Sauvegarder en .eml
+        msg.add_attachment(
+            file_data,
+            maintype='application',
+            subtype='vnd.openxmlformats-officedocument.presentationml.presentation',
+            filename="Rapport_2025.pptx",
+        )
+
     eml_path = os.path.join(OUTPUT_DIR, 'brouillon_outlook.eml')
     with open(eml_path, 'wb') as f:
         f.write(msg.as_bytes())
-        
+
     return send_file(eml_path, as_attachment=True, download_name="Ouvrir_dans_Outlook.eml")
 
 if __name__ == '__main__':

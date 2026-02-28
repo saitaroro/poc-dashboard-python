@@ -42,5 +42,17 @@ python app.py
 
 Visiter `http://localhost:5000` pour déclencher les calculs, puis télécharger le rapport.
 
+## Génération d’email/template 
+La route `/generate-email` crée désormais **un modèle Outlook (.oft)** si le module `pywin32`
+est présent et qu’Outlook est installé sur la machine. Le template reprend le sujet, les
+destinataires, le corps et attache le PPTX. En cas d’absence de `win32com`, on retombe sur
+l’ancien comportement qui exporte un `.eml`.
+
+Pour utiliser l’OFT il faut ajouter `pywin32` à `requirements.txt` et lancer `pip install` :
+
+```powershell
+pip install pywin32
+```
+
 > ✨ `matplotlib` est utilisé pour les graphiques; vous pouvez ajouter `seaborn` dans
 > `requirements.txt` si vous souhaitez des visualisations plus sophistiquées.
