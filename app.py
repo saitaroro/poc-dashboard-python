@@ -12,6 +12,7 @@ from pptx import Presentation
 from pptx.util import Inches
 from email.message import EmailMessage
 import io
+from forecast.model import train_and_forecast
 
 # tentative d'import pour la génération de template Outlook (.oft)
 try:
@@ -251,6 +252,25 @@ def validation_page():
 def test_download():
     # Permet de télécharger le PPT pour vérifier
     return send_file(os.path.join(OUTPUT_DIR, 'Rapport_Final.pptx'), as_attachment=True)
+
+
+@app.route('/forecast')
+def forecast_page():
+    # page HTML simple qui affichera l'image générée dynamiquement
+    create_mock_data()
+    return render_template('forecast.html')
+
+
+@app.route('/forecast_image')
+def forecast_image():
+    # génère la prévision et renvoie l'image PNG
+    create_mock_data()
+    df = pd.read_csv(DATA_FILE, parse_dates=['date_rdv', 'date_creation'])
+    try:
+        res = train_and_forecast(df, OUTPUT_DIR)
+        return send_file(res['chart'], mimetype='image/png')
+    except Exception as e:
+        return f"Erreur prévision: {e}", 500
 
 @app.route('/generate-email', methods=['POST'])
 def generate_email():

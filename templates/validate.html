@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Validation du Rapport</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; }
+        .box { border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 8px; background: white; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+        input[type="text"] { width: 100%; padding: 8px; margin-top: 5px; }
+        .btn-test { background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; display: inline-block; border-radius: 5px;}
+        .btn-send { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin-top: 15px;}
+    </style>
+</head>
+<body>
+    <h1>Rapport Généré avec succès !</h1>
+    
+    <div class="box">
+        <h3>Étape 1 : Vérification</h3>
+        <p>Téléchargez le rapport pour vérifier le contenu.</p>
+        <a href="/test-download" class="btn-test">Tester (Voir le PPT)</a>
+    </div>
+
+    <div class="box">
+        <h3>Étape 2 : Validation & Envoi</h3>
+        <p>Configurez l'email avant d'ouvrir Outlook.</p>
+        <form action="/generate-email" method="post">
+            <label>Destinataires (To):</label>
+            <input type="text" name="email_to" value="manager@entreprise.com">
+            
+            <label>Copie (Cc):</label>
+            <input type="text" name="email_cc" value="equipe@entreprise.com">
+            
+            <label>Objet du mail:</label>
+            <input type="text" name="subject" value="Rapport Mensuel des Rendez-vous 2025">
+            
+            <button type="submit" class="btn-send">Valider & Ouvrir Outlook</button>
+        </form>
+    </div>
+</body>
+</html>
