@@ -1,9 +1,9 @@
 import os
 import pandas as pd
 import matplotlib
-matplotlib.use('Agg') # Pour éviter les erreurs d'interface graphique dans Docker
-import matplotlib.pyplot as plt
-from flask import Flask, render_template, request, send_file, redirect, url_for
+matplotlib.use('Agg') # compatilibite Docker pour les graphiques
+import matplotlib.pyplot as pltate, re
+from flask import Flask, render_template, send_file, redirect, url_for
 from pptx import Presentation
 from pptx.util import Inches
 from email.message import EmailMessage
@@ -18,72 +18,177 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # --- 1. Génération de fausses données pour le POC ---
 def create_mock_data():
+    # génère un jeu de données synthétique selon la nouvelle structure décrite par l'utilisateur
     if not os.path.exists(DATA_FILE):
         os.makedirs('data', exist_ok=True)
-        data = {
-            'Bureau': ['Paris', 'Lyon', 'Marseille', 'Paris', 'Lyon'] * 24,
-            'Profil': ['Junior', 'Senior', 'Manager', 'Directeur', 'Junior'] * 24,
-            'Mois': ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin'] * 20,
-            'Rdv': [15, 22, 10, 5, 18] * 24
-        }
-        df = pd.DataFrame(data)
-        # On ajuste pour avoir 120 lignes pour l'exemple
-        df = df.iloc[:120] 
+        rows = []
+        start_date = datetime(2024, 1, 1)
+        for i in range(500):
+            # date du rendez-vous entre début 2024 et fin 2024
+            dr = start_date + timedelta(days=random.randint(0, 365))
+            # création du rdv jusqu'à 30 jours avant la date du rdv
+            dc = dr - timedelta(days=random.randint(0, 30))
+            canal = random.choice(['telephone', 'web'])
+            profil = random.choice(['Junior', 'Senior', 'Manager', 'Client'])
+            motif = random.choice(['Comptabilité', 'Support', 'Vente'])
+            sous_motif = random.choice(['Question', 'Réclamation', 'Demande'])
+            conseiller = random.randint(1, 20)
+            bureau = random.choice(['Paris', 'Lyon', 'Marseille', 'Bordeaux'])
+            mois = dr.strftime('%B')
+            annee_mois = dr.strftime('%Y-%m')
+            nb = random.randint(1, 3)  # agrégat
+            rows.append({
+                'date_rdv': dr.strftime('%Y-%m-%d'),
+                'canal': canal,
+                'profil': profil,
+                'motif': motif,
+                'sous_motif': sous_motif,
+                'date_creation': dc.strftime('%Y-%m-%d'),
+                'id_conseiller': conseiller,
+                'bureau': bureau,
+                'mois': mois,
+                'annee_mois': annee_mois,
+                'nb_rdv': nb
+            })
+        df = pd.DataFrame(rows)
         df.to_csv(DATA_FILE, index=False)
 
 # --- 2. Fonctions de Calcul et Graphiques ---
 def process_data():
-    df = pd.read_csv(DATA_FILE)
-    
-    # KPI 1: Total utilisateurs (simulé par nombre de lignes uniques ici pour l'exemple)
-    total_users = len(df)
-    
-    # KPI 2: Classement des bureaux
-    top_bureaux = df.groupby('Bureau')['Rdv'].sum().sort_values(ascending=False)
-    
-    # KPI 3: Graphique par mois
-    monthly_data = df.groupby('Mois')['Rdv'].sum()
-    
-    # Création du graphique
-    plt.figure(figsize=(10, 6))
-    monthly_data.plot(kind='bar', color='skyblue')
-    plt.title('Nombre de RDV par Mois en 2025')
-    plt.xlabel('Mois')
-    plt.ylabel('Nombre de RDV')
+    # lecture et parsing des dates
+    df = pd.read_csv(DATA_FILE, parse_dates=['date_rdv', 'date_creation'])
+
+    # volumes
+    total_volume = df['nb_rdv'].sum()
+    monthly = df.groupby('annee_mois')['nb_rdv'].sum()
+    df['week'] = df['date_rdv'].dt.isocalendar().week
+    weekly = df.groupby('week')['nb_rdv'].sum()
+
+    # délai moyen en jours
+    df['delay'] = (df['date_rdv'] - df['date_creation']).dt.days
+    avg_delay = df['delay'].mean()
+
+    # répartition journalière cumulée
+    daily = df.groupby('date_rdv')['nb_rdv'].sum().cumsum()
+
+    # fenêtre M-2 à M+1 par rapport au dernier mois disponible
+    last = df['date_rdv'].max().replace(day=1)
+    m2 = last - pd.DateOffset(months=2)
+    m_plus1 = last + pd.DateOffset(months=1)
+    mask = (df['date_rdv'] >= m2) & (df['date_rdv'] <= m_plus1)
+    window_vol = df.loc[mask].groupby('annee_mois')['nb_rdv'].sum()
+
+    # motifs et sous-motifs
+    motif_counts = df.groupby('motif')['nb_rdv'].sum()
+    sous_motif_counts = df.groupby('sous_motif')['nb_rdv'].sum()
+
+    # régions dérivées du bureau (simplification)
+    region_map = {
+        'Paris': "Île-de-France",
+        'Lyon': "Auvergne-Rhône-Alpes",
+        'Marseille': "Provence-Alpes-Côte d'Azur",
+        'Bordeaux': "Nouvelle-Aquitaine"
+    }
+    df['region'] = df['bureau'].map(region_map)
+    region_vol = df.groupby('region')['nb_rdv'].sum()
+
+    # évolution mois à mois par région
+    df['annee_mois_dt'] = pd.to_datetime(df['annee_mois'] + '-01')
+    region_monthly = df.groupby(['region', 'annee_mois'])['nb_rdv'].sum().unstack(fill_value=0)
+    months = sorted(region_monthly.columns)
+    if len(months) >= 2:
+        prev, lastm = months[-2], months[-1]
+        region_mom = region_monthly[lastm] - region_monthly[prev]
+    else:
+        region_mom = pd.Series(dtype=float)
+
+    # tendance globale (% change)
+    trend = monthly.pct_change().fillna(0)
+
+    # générer quelques graphiques de base (pour démonstration)
+    charts = {}
+    plt.figure()
+    monthly.plot(kind='bar', color='skyblue')
+    plt.title('Volumes mensuels')
+    plt.xlabel('Année-Mois')
+    plt.ylabel('Rendez-vous')
     plt.tight_layout()
-    chart_path = os.path.join(OUTPUT_DIR, 'chart_mois.png')
-    plt.savefig(chart_path)
+    charts['monthly'] = os.path.join(OUTPUT_DIR, 'monthly.png')
+    plt.savefig(charts['monthly'])
     plt.close()
-    
-    return total_users, top_bureaux, chart_path
+
+    plt.figure()
+    df['delay'].hist(bins=20)
+    plt.title('Délai de traitement (jours)')
+    plt.tight_layout()
+    charts['delay'] = os.path.join(OUTPUT_DIR, 'delay.png')
+    plt.savefig(charts['delay'])
+    plt.close()
+
+    plt.figure(figsize=(10, 6))
+    region_monthly.T.plot()
+    plt.title('Évolution par région (mois)')
+    plt.tight_layout()
+    charts['region_trend'] = os.path.join(OUTPUT_DIR, 'region_trend.png')
+    plt.savefig(charts['region_trend'])
+    plt.close()
+
+    return {
+        'total_volume': total_volume,
+        'monthly': monthly,
+        'weekly': weekly,
+        'avg_delay': avg_delay,
+        'daily_cumulative': daily,
+        'window_vol': window_vol,
+        'motif_counts': motif_counts,
+        'sous_motif_counts': sous_motif_counts,
+        'region_vol': region_vol,
+        'region_mom': region_mom,
+        'trend': trend,
+        'charts': charts
+    }
 
 # --- 3. Génération du PowerPoint ---
-def generate_pptx(total_users, top_bureaux, chart_path):
+def generate_pptx(results: dict):
+    """Crée un fichier PowerPoint à partir des indicateurs calculés.
+
+    * `results` est le dictionnaire renvoyé par `process_data`.
+    * On inclut les graphiques pré‑générés et quelques métriques clés.
+    """
     prs = Presentation()
-    
-    # Slide 1: Titre
+
+    # Slide 1 : titre général
     slide_layout = prs.slide_layouts[0]
     slide = prs.slides.add_slide(slide_layout)
     title = slide.shapes.title
     subtitle = slide.placeholders[1]
     title.text = "Rapport Mensuel 2025"
-    subtitle.text = "Analyse des Rendez-vous par Bureau"
-    
-    # Slide 2: Données et Graphique
-    slide_layout = prs.slide_layouts[1] # Titre et contenu
+    subtitle.text = "Analyse des rendez‑vous"
+
+    # Slide 2 : aperçu des volumes
+    slide_layout = prs.slide_layouts[1]
     slide = prs.slides.add_slide(slide_layout)
-    title = slide.shapes.title
-    title.text = "Vue d'ensemble"
-    
-    # Ajouter le texte des stats
-    text_frame = slide.shapes.placeholders[1].text_frame
-    text_frame.text = f"Total Utilisateurs traités : {total_users}"
-    p = text_frame.add_paragraph()
-    p.text = f"Meilleur Bureau : {top_bureaux.index[0]} ({top_bureaux.iloc[0]} rdv)"
-    
-    # Ajouter l'image du graphique
-    slide.shapes.add_picture(chart_path, Inches(1), Inches(3.5), width=Inches(8))
-    
+    slide.shapes.title.text = "Vue d'ensemble"
+    tf = slide.shapes.placeholders[1].text_frame
+    tf.text = f"Volume total de rendez‑vous : {results['total_volume']}"
+    p = tf.add_paragraph()
+    p.text = f"Délai moyen de traitement : {results['avg_delay']:.1f} jours"
+
+    # Insérer les graphiques générés automatiquement
+    y_offset = 3.0
+    for name, path in results['charts'].items():
+        try:
+            slide.shapes.add_picture(path, Inches(1), Inches(y_offset), width=Inches(8))
+            y_offset += 4.5
+            # ajouter une slide si l'espace manque
+            if y_offset > 7:
+                slide_layout = prs.slide_layouts[1]
+                slide = prs.slides.add_slide(slide_layout)
+                y_offset = 1.0
+        except Exception:
+            # si un graphique ne peut pas être ajouté, on l'ignore
+            pass
+
     pptx_path = os.path.join(OUTPUT_DIR, 'Rapport_Final.pptx')
     prs.save(pptx_path)
     return pptx_path
@@ -97,10 +202,10 @@ def index():
 
 @app.route('/integrate', methods=['POST'])
 def integrate():
-    # Lance les calculs
-    total, top, chart = process_data()
-    # Génère le PPT
-    generate_pptx(total, top, chart)
+    # Lance les calculs et récupère tous les indicateurs
+    stats = process_data()
+    # Génère le PPT à partir du dictionnaire renvoyé
+    generate_pptx(stats)
     return redirect(url_for('validation_page'))
 
 @app.route('/validate')
