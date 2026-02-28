@@ -1,9 +1,13 @@
 import os
+import random
+from datetime import datetime, timedelta
+
 import pandas as pd
 import matplotlib
-matplotlib.use('Agg') # compatilibite Docker pour les graphiques
-import matplotlib.pyplot as pltate, re
-from flask import Flask, render_template, send_file, redirect, url_for
+matplotlib.use('Agg')  # compatibilité Docker pour les graphiques
+import matplotlib.pyplot as plt
+
+from flask import Flask, render_template, request, send_file, redirect, url_for
 from pptx import Presentation
 from pptx.util import Inches
 from email.message import EmailMessage
@@ -25,13 +29,16 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # --- 1. Génération de fausses données pour le POC ---
 def create_mock_data():
     # génère un jeu de données synthétique selon la nouvelle structure décrite par l'utilisateur
+    # pour permettre l'entraînement d'un modèle de forecast il faut une volumétrie
+    # raisonnable (plusieurs milliers de lignes).
     if not os.path.exists(DATA_FILE):
         os.makedirs('data', exist_ok=True)
         rows = []
         start_date = datetime(2024, 1, 1)
-        for i in range(500):
-            # date du rendez-vous entre début 2024 et fin 2024
-            dr = start_date + timedelta(days=random.randint(0, 365))
+        # génération sur deux années jusqu'à janvier 2026 (~730 jours)
+        for i in range(6000):
+            # date du rendez-vous entre début 2024 et fin janvier 2026
+            dr = start_date + timedelta(days=random.randint(0, 730))
             # création du rdv jusqu'à 30 jours avant la date du rdv
             dc = dr - timedelta(days=random.randint(0, 30))
             canal = random.choice(['telephone', 'web'])
@@ -139,6 +146,15 @@ def process_data():
     plt.savefig(charts['region_trend'])
     plt.close()
 
+    # ---  new: forecast ---
+    try:
+        forecast_res = train_and_forecast(df, OUTPUT_DIR)
+        charts['forecast'] = forecast_res['chart']
+    except Exception as e:
+        # manque de données ou librairie, on ignore
+        forecast_res = {'actual': pd.Series(dtype=float), 'forecast': pd.Series(dtype=float)}
+        print(f"Prévision non calculée: {e}")
+
     return {
         'total_volume': total_volume,
         'monthly': monthly,
@@ -151,7 +167,8 @@ def process_data():
         'region_vol': region_vol,
         'region_mom': region_mom,
         'trend': trend,
-        'charts': charts
+        'charts': charts,
+        'forecast': forecast_res,
     }
 
 # --- 3. Génération du PowerPoint ---
@@ -194,6 +211,18 @@ def generate_pptx(results: dict):
         except Exception:
             # si un graphique ne peut pas être ajouté, on l'ignore
             pass
+
+    # Slide supplémentaire pour la prévision (si disponible)
+    if 'forecast' in results and results['forecast']['forecast'].any():
+        slide_layout = prs.slide_layouts[1]
+        slide = prs.slides.add_slide(slide_layout)
+        slide.shapes.title.text = "Prévision des 6 prochains mois"
+        tf = slide.shapes.placeholders[1].text_frame
+        actual = results['forecast']['actual'].sum()
+        pred = results['forecast']['forecast'].sum()
+        tf.text = f"Total réel (derniers 6 mois) : {actual:.0f} rendez‑vous"
+        p = tf.add_paragraph()
+        p.text = f"Total prédit (6 mois suivants) : {pred:.0f} rendez‑vous"
 
     pptx_path = os.path.join(OUTPUT_DIR, 'Rapport_Final.pptx')
     prs.save(pptx_path)

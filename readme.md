@@ -30,6 +30,31 @@ La fonction `process_data()` produit :
 
 Quelques graphiques sont générés dans `output/` et intégrés dans le PowerPoint.
 
+## Prévisions (forecast)
+
+Une nouvelle fonctionnalité de prévision hebdomadaire a été ajoutée pour estimer
+les volumes de rendez-vous des 6 mois suivants en s'appuyant sur les 6 derniers
+mois réels. Le dossier `forecast/` contient une petite bibliothèque Python :
+
+``forecast/model.py``
+
+contenant la logique d'entraînement (`ExponentialSmoothing` de `statsmodels`)
+et de génération de graphique. Le module entraîne un modèle simple, le
+sauvegarde en ``output/forecast_model.pkl`` et produit ``output/forecast.png``.
+
+Lors de l'appel standard (`/integrate`), le module est exécuté automatiquement
+et la prévision figure dans le PPTX final.
+
+Le code de génération de jeu de données a également été augmenté (6000 lignes) dans
+`app.py` pour fournir suffisamment d'historique.
+
+L'indicateur "prévision du nombre de rendez-vous" est inclus dans les résultats
+et le PPTX final.
+
+N'oubliez pas d'installer la dépendance supplémentaire :
+```powershell
+pip install statsmodels
+```
 ## Installation et lancement
 ```powershell
 cd path\to\poc-dashboard-python
